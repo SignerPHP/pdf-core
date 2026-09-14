@@ -12,7 +12,7 @@ use SignerPHP\PdfCore\Xref\XrefParseResult;
 
 final class XRef15Parser
 {
-    public function parse(PdfDocument $pdfDocument, int $xrefPosition, array $visitedPositions = []): XrefParseResult
+    public function parse(PdfDocument $pdfDocument, int $xrefPosition, array $visitedPositions = [], bool $followPrev = true): XrefParseResult
     {
         $xrefObject = $pdfDocument->findObjectAtOffset($xrefPosition);
 
@@ -46,7 +46,7 @@ final class XRef15Parser
         $visitedPositions[$xrefPosition] = true;
 
         $xrefTable = [];
-        if (isset($xrefObject['Prev'])) {
+        if ($followPrev && isset($xrefObject['Prev'])) {
             $prev = $xrefObject['Prev']->asIntOrNull();
             if ($prev === null) {
                 throw new PdfCoreStructureException('Invalid reference to a previous xref table');

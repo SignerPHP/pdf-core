@@ -64,6 +64,10 @@ final class XRef14Parser
 
         $visitedPositions[$xrefPosition] = true;
 
+        if (isset($trailer['XRefStm'])) {
+            $xrefTable = $this->mergeHybridXRefStream($buffer, $trailer, $xrefTable, $visitedPositions);
+        }
+
         if (isset($trailer['Prev'])) {
             $xrefTable = $this->mergePreviousTables($buffer, $trailer, $version, $xrefTable, $visitedPositions);
         }
@@ -209,6 +213,44 @@ final class XRef14Parser
         }
 
         return null;
+    }
+
+    /**
+     * Merge the current-section hybrid xref stream pointed by /XRefStm.
+     *
+     * The stream is a supplement to this classic table (typically type-2
+     * compressed objects). Its own /Prev is ignored; revision history is
+     * walked from the trailer /Prev after this merge.
+     *
+     * @param  array<int, int|array{stmoid:int,pos:int}|null>  $currentTable
+     * @param  array<int, true>  $visitedPositions
+     * @return array<int, int|array{stmoid:int,pos:int}|null>
+     *
+     * @throws PdfCoreParsingException
+     * @throws PdfCoreStructureException
+     */
+    private function mergeHybridXRefStream(string $buffer, PDFValue $trailer, array $currentTable, array $visitedPositions): array
+    {
+        $xrefStmPosition = $trailer['XRefStm']->asIntOrNull();
+        if ($xrefStmPosition === null) {
+            throw new PdfCoreStructureException('Invalid trailer: XRefStm must be numeric.');
+        }
+
+        if (isset($visitedPositions[$xrefStmPosition])) {
+            return $currentTable;
+        }
+
+        $document = new PdfDocument;
+        $document->setBufferFromString($buffer);
+        $streamTable = (new XRef15Parser)->parse($document, $xrefStmPosition, $visitedPositions, false)->table;
+
+        foreach ($streamTable as $objectId => $offset) {
+            if (! isset($currentTable[$objectId])) {
+                $currentTable[$objectId] = $offset;
+            }
+        }
+
+        return $currentTable;
     }
 
     /**

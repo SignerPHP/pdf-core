@@ -142,4 +142,93 @@ final class XRef14ParserTest extends TestCase
 
         self::assertSame([], $result->table);
     }
+
+    public function test_parse_merges_hybrid_xref_stream_entries_from_xrefstm(): void
+    {
+        $streamEntries = chr(2).pack('n', 9).chr(3);
+        $xrefStream = "10 0 obj\n"
+            ."<< /Type /XRef /W [1 2 1] /Size 6 /Index [5 1] /Length 4 >>\n"
+            ."stream\n"
+            .$streamEntries."\n"
+            ."endstream\n"
+            ."endobj\n";
+        $table = "xref\n1 1\n0000000010 00000 n \ntrailer\n<< /Size 6 /XRefStm 0 >>\nstartxref\n".strlen($xrefStream)."\n%%EOF\n";
+        $buffer = $xrefStream.$table;
+
+        $result = (new XRef14Parser)->parse($buffer, strlen($xrefStream));
+
+        self::assertSame(10, $result->table[1]);
+        self::assertSame(['stmoid' => 9, 'pos' => 3], $result->table[5]);
+        self::assertSame('1.4', $result->minimumPdfVersion);
+    }
+
+    public function test_parse_hybrid_xref_table_wins_over_xrefstm_for_the_same_object(): void
+    {
+        $streamEntries = chr(1).pack('n', 99).chr(0);
+        $xrefStream = "10 0 obj\n"
+            ."<< /Type /XRef /W [1 2 1] /Size 2 /Index [1 1] /Length 4 >>\n"
+            ."stream\n"
+            .$streamEntries."\n"
+            ."endstream\n"
+            ."endobj\n";
+        $table = "xref\n1 1\n0000000010 00000 n \ntrailer\n<< /Size 2 /XRefStm 0 >>\nstartxref\n".strlen($xrefStream)."\n%%EOF\n";
+        $buffer = $xrefStream.$table;
+
+        $result = (new XRef14Parser)->parse($buffer, strlen($xrefStream));
+
+        self::assertSame(10, $result->table[1]);
+        self::assertArrayNotHasKey(99, $result->table);
+    }
+
+    public function test_parse_hybrid_xrefstm_does_not_follow_stream_prev(): void
+    {
+        $previous = "xref\n3 1\n0000000030 00000 n \ntrailer\n<< /Size 4 >>\nstartxref\n0\n%%EOF\n";
+        $streamEntries = chr(1).pack('n', 20).chr(0);
+        $xrefStream = "10 0 obj\n"
+            ."<< /Type /XRef /W [1 2 1] /Size 4 /Index [2 1] /Prev 0 /Length 4 >>\n"
+            ."stream\n"
+            .$streamEntries."\n"
+            ."endstream\n"
+            ."endobj\n";
+        $padding = str_repeat("\n", 512);
+        $table = "xref\n1 1\n0000000010 00000 n \ntrailer\n<< /Size 4 /XRefStm ".strlen($previous)." >>\nstartxref\n"
+            .(strlen($previous) + strlen($xrefStream) + strlen($padding))."\n%%EOF\n";
+        $buffer = $previous.$xrefStream.$padding.$table;
+
+        $result = (new XRef14Parser)->parse($buffer, strlen($previous) + strlen($xrefStream) + strlen($padding));
+
+        self::assertSame(10, $result->table[1]);
+        self::assertSame(20, $result->table[2]);
+        self::assertArrayNotHasKey(3, $result->table);
+    }
+
+    public function test_parse_hybrid_xrefstm_and_prev_merge_current_stream_and_previous_table(): void
+    {
+        $previous = "xref\n3 1\n0000000030 00000 n \ntrailer\n<< /Size 4 >>\nstartxref\n0\n%%EOF\n";
+        $streamEntries = chr(2).pack('n', 8).chr(0);
+        $xrefStream = "10 0 obj\n"
+            ."<< /Type /XRef /W [1 2 1] /Size 6 /Index [5 1] /Length 4 >>\n"
+            ."stream\n"
+            .$streamEntries."\n"
+            ."endstream\n"
+            ."endobj\n";
+        $currentPos = strlen($previous) + strlen($xrefStream);
+        $table = "xref\n1 1\n0000000010 00000 n \ntrailer\n<< /Size 6 /Prev 0 /XRefStm ".strlen($previous)." >>\nstartxref\n{$currentPos}\n%%EOF\n";
+        $buffer = $previous.$xrefStream.$table;
+
+        $result = (new XRef14Parser)->parse($buffer, $currentPos);
+
+        self::assertSame(10, $result->table[1]);
+        self::assertSame(30, $result->table[3]);
+        self::assertSame(['stmoid' => 8, 'pos' => 0], $result->table[5]);
+    }
+
+    public function test_parse_throws_when_xrefstm_is_not_numeric(): void
+    {
+        $buffer = "xref\n1 1\n0000000010 00000 n \ntrailer\n<< /Size 2 /XRefStm /Nope >>\nstartxref\n0\n%%EOF\n";
+
+        $this->expectException(\Exception::class);
+        $this->expectExceptionMessage('Invalid trailer: XRefStm must be numeric.');
+        (new XRef14Parser)->parse($buffer, 0);
+    }
 }

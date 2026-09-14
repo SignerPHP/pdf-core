@@ -54,7 +54,7 @@ This package builds and tests with only its own directory mounted. Its test fixt
 
 ## Known inherited limitations
 
-- Classic xrefs, xref streams, object streams and `/Prev` behavior are preserved. Explicit `/XRefStm` hybrid section merging is not yet implemented.
+- Classic xrefs, xref streams, object streams, `/Prev` and hybrid `/XRefStm` section merging are supported. A hybrid trailer’s `/XRefStm` is treated as a supplement to that classic table (table entries win on conflict); revision history still comes from `/Prev`.
 - Regex-based structural inspection is diagnostic, not authoritative parsing.
 - Inline AcroForm/Perms handling, generation serialization and fixed xref entry widths need separate review.
 - FormMDP can be represented using PDF dictionaries but has no dedicated builder yet.

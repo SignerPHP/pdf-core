@@ -63,6 +63,23 @@ final class XRef15ParserTest extends TestCase
         self::assertSame(77, $result->table[2]);
     }
 
+    public function test_parse_can_skip_prev_when_reading_a_hybrid_section_stream(): void
+    {
+        $prevObject = $this->xrefObject(chr(1).pack('n', 33).chr(0), [1, 2, 1], [1, 1], 10);
+        $currentObject = $this->xrefObject(chr(1).pack('n', 77).chr(0), [1, 2, 1], [2, 1], 10);
+        $currentObject['Prev'] = 50;
+
+        $document = $this->documentAtPositions([
+            50 => $prevObject,
+            100 => $currentObject,
+        ]);
+
+        $result = (new XRef15Parser)->parse($document, 100, [], false);
+
+        self::assertArrayNotHasKey(1, $result->table);
+        self::assertSame(77, $result->table[2]);
+    }
+
     public function test_parse_keeps_offset_entry_when_generation_is_non_zero_for_type_one(): void
     {
         $stream = chr(1).pack('n', 123).chr(1);
