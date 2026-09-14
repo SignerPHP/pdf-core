@@ -1,26 +1,14 @@
 # signerphp/pdf-core
 
+[![Packagist](https://img.shields.io/packagist/v/signerphp/pdf-core.svg)](https://packagist.org/packages/signerphp/pdf-core)
+
 Standalone PHP library for PDF parsing, object manipulation and incremental serialization. Requires PHP 8.2+, zlib, fileinfo and ctype. It has no dependency on Signer PHP, OpenSSL, certificates, signing providers or timestamp services.
 
 ```bash
 composer require signerphp/pdf-core
 ```
 
-Until the package is on Packagist, require it from GitHub:
-
-```json
-{
-    "repositories": [
-        {
-            "type": "vcs",
-            "url": "https://github.com/SignerPHP/pdf-core"
-        }
-    ],
-    "require": {
-        "signerphp/pdf-core": "^0.1"
-    }
-}
-```
+PDF signing lives in the sibling package [`signerphp/pdf-signer`](https://packagist.org/packages/signerphp/pdf-signer), which depends on this library.
 
 ```php
 use SignerPHP\PdfCore\Service\PdfDocumentPreparer;
@@ -50,7 +38,7 @@ docker compose run --rm app composer tests
 docker compose run --rm app composer pint:check
 ```
 
-This package builds and tests with only its own directory mounted. Its test fixtures do not require Signer PHP. The sibling Signer PHP repository uses a Composer path repository for local development. Publish and tag this package before releasing the consuming Signer PHP version; replace the local path repository with the published package for distribution.
+This package builds and tests with only its own directory mounted. Its test fixtures do not require Signer PHP. Consumers such as `signerphp/pdf-signer` install it from Packagist.
 
 ## Known inherited limitations
 
