@@ -49,6 +49,9 @@ final class XrefContentResolver
     private function buildV15(PdfDocument $pdfDocument, array $objectOffsets, int $xrefOffset): Buffer
     {
         $trailer = $pdfDocument->createObject(clone $pdfDocument->getTrailerObject());
+        if (isset($trailer['XRefStm'])) {
+            unset($trailer['XRefStm']);
+        }
         $objectOffsets[$trailer->getOid()] = $xrefOffset;
 
         $xref = Xref::new()->buildXref15($objectOffsets);
@@ -86,11 +89,15 @@ final class XrefContentResolver
     {
         $xrefContent = Xref::new()->buildXref($objectOffsets);
 
-        $pdfDocument->getTrailerObject()['Size'] = $pdfDocument->getMaxOid() + 1;
-        $pdfDocument->getTrailerObject()['Prev'] = $pdfDocument->getXrefPosition();
+        $trailer = clone $pdfDocument->getTrailerObject();
+        if (isset($trailer['XRefStm'])) {
+            unset($trailer['XRefStm']);
+        }
+        $trailer['Size'] = $pdfDocument->getMaxOid() + 1;
+        $trailer['Prev'] = $pdfDocument->getXrefPosition();
 
         $docFromXref = new Buffer($xrefContent);
-        $docFromXref->data("trailer\n".$pdfDocument->getTrailerObject());
+        $docFromXref->data("trailer\n".$trailer);
         $docFromXref->data("\nstartxref\n{$xrefOffset}\n%%EOF\n");
 
         return $docFromXref;
