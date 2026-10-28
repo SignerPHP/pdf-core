@@ -68,6 +68,49 @@ final class XrefContentResolverServiceTest extends TestCase
         self::assertStringNotContainsString('/Filter', $raw);
     }
 
+    public function test_classic_incremental_trailer_omits_inherited_xrefstm_without_mutating_historical_trailer(): void
+    {
+        $document = new PdfDocument;
+        $document->setBufferFromString('%PDF-1.4');
+        $document->setPdfVersion('PDF-1.4');
+        $document->setXrefTableVersion('1.4');
+        $document->setXrefPosition(42);
+        $document->setMaxOid(2);
+        $document->setTrailerObject(new PDFValueObject([
+            'Root' => '1 0 R',
+            'XRefStm' => 18,
+        ]));
+
+        $originalTrailer = (string) $document->getTrailerObject();
+        $revision = (new XrefContentResolver)->resolve($document, [2 => 50], 90)->raw();
+
+        self::assertStringNotContainsString('/XRefStm', $revision);
+        self::assertStringContainsString('/Prev 42', $revision);
+        self::assertSame($originalTrailer, (string) $document->getTrailerObject());
+        self::assertStringContainsString('/XRefStm', (string) $document->getTrailerObject());
+    }
+
+    public function test_xref_stream_incremental_dictionary_omits_inherited_xrefstm(): void
+    {
+        $document = new PdfDocument;
+        $document->setBufferFromString('%PDF-1.5');
+        $document->setPdfVersion('PDF-1.5');
+        $document->setXrefTableVersion('1.5');
+        $document->setXrefPosition(42);
+        $document->setMaxOid(2);
+        $document->setTrailerObject(new PDFValueObject([
+            'Root' => '1 0 R',
+            'XRefStm' => 18,
+        ]));
+
+        $originalTrailer = (string) $document->getTrailerObject();
+        $revision = (new XrefContentResolver)->resolve($document, [2 => 50], 90)->raw();
+
+        self::assertStringContainsString('/Type/XRef', $revision);
+        self::assertStringNotContainsString('/XRefStm', $revision);
+        self::assertSame($originalTrailer, (string) $document->getTrailerObject());
+    }
+
     public function test_resolve_uses_pdf_header_version_when_it_is_lower_than_xref_version_for_v14_documents(): void
     {
         $document = new PdfDocument;

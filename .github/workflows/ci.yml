@@ -46,5 +46,11 @@ jobs:
       - name: Pint check
         run: composer pint:check
 
+      - name: Install independent PDF parser
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y mupdf-tools
+          command -v mutool
+
       - name: Run test suite
         run: composer tests
