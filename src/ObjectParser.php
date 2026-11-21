@@ -139,6 +139,10 @@ class ObjectParser implements Stringable
                         throw new PdfCoreParsingException('Invalid null object value for field '.$field);
                     }
 
+                    if (array_key_exists($field, $object)) {
+                        throw new PdfCoreParsingException('Duplicate PDF dictionary key: '.$field);
+                    }
+
                     $object[$field] = $value;
                     break;
 

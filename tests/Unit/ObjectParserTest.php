@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace SignerPHP\PdfCore\Tests\Unit;
 
 use Exception;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use SignerPHP\PdfCore\Exception\PdfCoreParsingException;
 use SignerPHP\PdfCore\ObjectParser;
 use SignerPHP\PdfCore\PdfValue\PDFValueHexString;
 use SignerPHP\PdfCore\PdfValue\PDFValueList;
@@ -28,6 +30,36 @@ final class ObjectParserTest extends TestCase
         self::assertInstanceOf(PDFValueHexString::class, $parsed['Data']);
         self::assertSame('Sig', $parsed['Type']->val());
         self::assertSame('John', $parsed['Name']->val());
+    }
+
+    #[DataProvider('duplicateDictionaryKeyProvider')]
+    public function test_parser_rejects_duplicate_dictionary_keys(string $dictionary): void
+    {
+        $this->expectException(PdfCoreParsingException::class);
+        $this->expectExceptionMessage('Duplicate PDF dictionary key');
+
+        (new ObjectParser)->parseString($dictionary);
+    }
+
+    /** @return array<string, array{string}> */
+    public static function duplicateDictionaryKeyProvider(): array
+    {
+        return [
+            'conflicting permissions ascending' => ['<< /P 1 /P 3 >>'],
+            'conflicting permissions descending' => ['<< /P 3 /P 1 >>'],
+            'repeated signature references' => ['<< /Reference [1] /Reference [2] >>'],
+            'duplicates in nested dictionary' => ['<< /TransformParams << /P 1 /P 3 >> >>'],
+            'duplicate with identical value' => ['<< /Type /Sig /Type /Sig >>'],
+        ];
+    }
+
+    public function test_parser_preserves_unique_dictionary_keys(): void
+    {
+        $parsed = (new ObjectParser)->parseString('<< /Type /Sig /Reference [1] /TransformParams << /P 2 >> >>');
+
+        self::assertInstanceOf(PDFValueObject::class, $parsed);
+        self::assertSame('Sig', $parsed['Type']->val());
+        self::assertInstanceOf(PDFValueObject::class, $parsed['TransformParams']);
     }
 
     public function test_parser_throws_on_empty_input(): void
