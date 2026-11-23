@@ -24,7 +24,7 @@ final class SignatureDictionaryInspector
             }
 
             $dictionary = substr($pdfContent, $start, $end - $start + 2);
-            if (! is_string($dictionary) || ! preg_match('/\/Type\s*\/Sig\b/', $dictionary)) {
+            if (! is_string($dictionary) || ! preg_match('/\/Type\s*\/(?:Sig|DocTimeStamp)\b/', $dictionary)) {
                 continue;
             }
 
