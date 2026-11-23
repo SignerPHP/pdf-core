@@ -95,7 +95,52 @@ final class DocumentTimestampObjectAssemblerTest extends TestCase
         $field = $document->getObject($acroForm['Fields']->asObjectReferenceOrNull()[0]);
         self::assertNotNull($field);
         self::assertSame($timestamp->getOid(), $field['V']->asObjectReferenceOrNull());
-        self::assertFalse(isset($field['P']));
+        self::assertSame('/Sig', (string) $field['FT']);
+        foreach (['Type', 'Subtype', 'P', 'Rect', 'F'] as $widgetKey) {
+            self::assertFalse(isset($field[$widgetKey]), "a field without a page must not declare widget key /$widgetKey");
+        }
+    }
+
+    public function test_assemble_throws_and_keeps_annotations_when_annots_reference_cannot_be_resolved(): void
+    {
+        $document = $this->buildSinglePageDocument();
+        $page = $document->getObject(3);
+        self::assertNotNull($page);
+        $page['Annots'] = new PDFValueReference(88);
+        $document->addObject($page);
+        $objectsBefore = count($document->getPdfObjects());
+
+        try {
+            (new DocumentTimestampObjectAssembler)->assemble($document);
+            self::fail('An unresolvable /Annots reference must not be replaced.');
+        } catch (PdfCoreStructureException $exception) {
+            self::assertSame('Could not resolve annotation list object while attaching document timestamp.', $exception->getMessage());
+        }
+
+        $page = $document->getObject(3);
+        self::assertNotNull($page);
+        self::assertSame(88, $page['Annots']->asObjectReferenceOrNull());
+        self::assertCount($objectsBefore, $document->getPdfObjects(), 'no field may be created');
+    }
+
+    public function test_existing_page_annotations_are_preserved(): void
+    {
+        $document = $this->buildSinglePageDocument();
+        $annots = new PDFObject(10, new PDFValueList([new PDFValueReference(50), new PDFValueReference(51)]));
+        $document->addObject($annots);
+        $page = $document->getObject(3);
+        self::assertNotNull($page);
+        $page['Annots'] = new PDFValueReference($annots->getOid());
+        $document->addObject($page);
+
+        (new DocumentTimestampObjectAssembler)->assemble($document);
+
+        $page = $document->getObject(3);
+        self::assertNotNull($page);
+        $refs = $page['Annots']->asObjectReferenceOrNull();
+        self::assertIsArray($refs);
+        self::assertSame([50, 51], array_slice($refs, 0, 2));
+        self::assertCount(3, $refs);
     }
 
     public function test_assemble_throws_when_root_reference_is_missing(): void

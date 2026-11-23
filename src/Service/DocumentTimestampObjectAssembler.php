@@ -17,8 +17,9 @@ use SignerPHP\PdfCore\Utils\Str;
 
 /**
  * Attaches a document timestamp (ISO 32000-2, 12.8.5) the way signatures are attached:
- * the /DocTimeStamp dictionary is the /V of an invisible signature field listed in
- * /AcroForm /Fields, and the field's widget is added to the first page when there is one.
+ * the /DocTimeStamp dictionary is the /V of a signature field listed in /AcroForm /Fields.
+ * When the document has a page, the field is merged with an invisible widget annotation
+ * on the first page; without pages it is a plain field dictionary (no widget).
  */
 final class DocumentTimestampObjectAssembler
 {
@@ -31,21 +32,26 @@ final class DocumentTimestampObjectAssembler
         $pageObject = $pdfDocument->getPageInfo()->getPage(0);
 
         $field = [
-            'Type' => '/Annot',
-            'Subtype' => '/Widget',
             'FT' => '/Sig',
             'T' => new PDFValueString('DocTimeStamp'.Str::random()),
             'V' => new PDFValueReference($timestampObject->getOid()),
-            'Rect' => [0, 0, 0, 0],
-            'F' => 132,
         ];
+
+        $annotations = null;
         if ($pageObject !== null) {
-            $field['P'] = new PDFValueReference($pageObject->getOid());
+            // Resolve /Annots before creating any object, so a broken reference leaves the document untouched.
+            $annotations = $this->resolveListValue($pdfDocument, $pageObject['Annots'] ?? new PDFValueList, 'annotation list');
+            $field += [
+                'Type' => '/Annot',
+                'Subtype' => '/Widget',
+                'P' => new PDFValueReference($pageObject->getOid()),
+                'Rect' => [0, 0, 0, 0],
+                'F' => 132,
+            ];
         }
         $fieldObject = $pdfDocument->createObject($field);
 
-        if ($pageObject !== null) {
-            $annotations = $this->resolveListValue($pdfDocument, $pageObject['Annots'] ?? new PDFValueList, 'annotation list', true);
+        if ($pageObject !== null && $annotations !== null) {
             $annotations->push(new PDFValueReference($fieldObject->getOid()));
             $pageObject['Annots'] = $annotations;
             $pdfDocument->addObject($pageObject);
@@ -100,7 +106,7 @@ final class DocumentTimestampObjectAssembler
         return $rootObject;
     }
 
-    private function resolveListValue(PdfDocument $pdfDocument, PDFValue $value, string $context, bool $fallbackWhenMissingReference = false): PDFValueList
+    private function resolveListValue(PdfDocument $pdfDocument, PDFValue $value, string $context): PDFValueList
     {
         if ($value instanceof PDFValueList) {
             return new PDFValueList($value->val());
@@ -110,10 +116,6 @@ final class DocumentTimestampObjectAssembler
         if (($reference !== null) && (! is_array($reference))) {
             $listObject = $pdfDocument->getObject($reference);
             if ($listObject === null) {
-                if ($fallbackWhenMissingReference) {
-                    return new PDFValueList;
-                }
-
                 throw new PdfCoreStructureException('Could not resolve '.$context.' object while attaching document timestamp.');
             }
 
