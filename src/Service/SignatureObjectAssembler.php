@@ -194,9 +194,7 @@ final class SignatureObjectAssembler
             ]),
         ]);
 
-        $permsObject = $this->resolveOrCreatePermsObject($pdfDocument, $rootObject);
-        $permsObject['DocMDP'] = new PDFValueReference($signatureObject->getOid());
-        $pdfDocument->addObject($permsObject);
+        $this->setPermsEntry($pdfDocument, $rootObject, 'DocMDP', new PDFValueReference($signatureObject->getOid()));
     }
 
     private function hasExistingDocMdp(PdfDocument $pdfDocument, PDFValue $permsValue): bool
@@ -218,26 +216,32 @@ final class SignatureObjectAssembler
         return isset($permsObject['DocMDP']);
     }
 
-    private function resolveOrCreatePermsObject(PdfDocument $pdfDocument, PDFObject $rootObject): PDFObject
+    /**
+     * Writes an entry into the catalog's /Perms dictionary (ISO 32000-1, 12.8.4),
+     * whether /Perms is missing, inline or an indirect object.
+     */
+    private function setPermsEntry(PdfDocument $pdfDocument, PDFObject $rootObject, string $key, PDFValue $value): void
     {
-        if (! isset($rootObject['Perms'])) {
-            $rootObject['Perms'] = new PDFValueObject;
-            $pdfDocument->addObject($rootObject);
+        $perms = $rootObject['Perms'] ?? null;
 
-            return $rootObject;
-        }
+        if ($perms !== null && ! $perms instanceof PDFValueObject) {
+            $reference = $perms->asObjectReferenceOrNull();
+            if (($reference !== null) && (! is_array($reference))) {
+                $permsObject = $pdfDocument->getObject($reference);
+                if ($permsObject === null) {
+                    throw new PdfCoreStructureException('Could not resolve existing Perms object.');
+                }
 
-        $perms = $rootObject['Perms'];
-        $reference = $perms->asObjectReferenceOrNull();
-        if (($reference !== null) && (! is_array($reference))) {
-            $resolvedPerms = $pdfDocument->getObject($reference);
-            if ($resolvedPerms === null) {
-                throw new PdfCoreStructureException('Could not resolve existing Perms object.');
+                $permsObject[$key] = $value;
+                $pdfDocument->addObject($permsObject);
+
+                return;
             }
-
-            return $resolvedPerms;
         }
 
-        return $rootObject;
+        $entries = $perms instanceof PDFValueObject ? $perms->val() : [];
+        $entries[$key] = $value;
+        $rootObject['Perms'] = new PDFValueObject($entries);
+        $pdfDocument->addObject($rootObject);
     }
 }

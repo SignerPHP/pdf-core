@@ -80,11 +80,61 @@ final class SignatureObjectAssemblerTest extends TestCase
 
         $root = $document->getObject(1);
         self::assertNotNull($root);
-        self::assertNotNull($root['Perms']);
-        self::assertNotNull($root['DocMDP']);
+        self::assertFalse(isset($root['DocMDP']), 'DocMDP must live inside /Perms, not on the catalog');
 
-        $docMdpOid = $root['DocMDP']->asObjectReferenceOrNull();
-        self::assertSame($signature->getOid(), $docMdpOid);
+        $perms = $root['Perms'];
+        self::assertInstanceOf(PDFValueObject::class, $perms);
+        self::assertSame($signature->getOid(), $perms['DocMDP']->asObjectReferenceOrNull());
+        self::assertStringContainsString('/Perms<</DocMDP '.$signature->getOid().' 0 R>>', (string) $root);
+    }
+
+    public function test_assemble_keeps_existing_inline_perms_entries_when_adding_docmdp(): void
+    {
+        $document = $this->buildSinglePageDocument();
+        $root = $document->getObject(1);
+        self::assertNotNull($root);
+        $root['Perms'] = new PDFValueObject(['UR3' => new PDFValueReference(42)]);
+        $document->addObject($root);
+
+        $signature = (new SignatureObjectAssembler)->assemble(
+            $document,
+            SignatureAppearance::new()->withRect([10, 10, 100, 60]),
+            Metadata::new(),
+            certificationLevel: 1,
+        );
+
+        $root = $document->getObject(1);
+        self::assertNotNull($root);
+        self::assertFalse(isset($root['DocMDP']));
+        self::assertSame(42, $root['Perms']['UR3']->asObjectReferenceOrNull());
+        self::assertSame($signature->getOid(), $root['Perms']['DocMDP']->asObjectReferenceOrNull());
+    }
+
+    public function test_assemble_writes_docmdp_into_indirect_perms_object(): void
+    {
+        $document = $this->buildSinglePageDocument();
+        $permsObject = $document->createObject(['UR3' => new PDFValueReference(42)]);
+        $root = $document->getObject(1);
+        self::assertNotNull($root);
+        $root['Perms'] = new PDFValueReference($permsObject->getOid());
+        $document->addObject($root);
+
+        $signature = (new SignatureObjectAssembler)->assemble(
+            $document,
+            SignatureAppearance::new()->withRect([10, 10, 100, 60]),
+            Metadata::new(),
+            certificationLevel: 2,
+        );
+
+        $root = $document->getObject(1);
+        self::assertNotNull($root);
+        self::assertFalse(isset($root['DocMDP']));
+        self::assertSame($permsObject->getOid(), $root['Perms']->asObjectReferenceOrNull());
+
+        $resolvedPerms = $document->getObject($permsObject->getOid());
+        self::assertNotNull($resolvedPerms);
+        self::assertSame(42, $resolvedPerms['UR3']->asObjectReferenceOrNull());
+        self::assertSame($signature->getOid(), $resolvedPerms['DocMDP']->asObjectReferenceOrNull());
     }
 
     public function test_assemble_generates_visible_appearance_when_image_is_present(): void
@@ -285,7 +335,7 @@ final class SignatureObjectAssemblerTest extends TestCase
         self::assertInstanceOf(PDFValueList::class, $root['Fields']);
     }
 
-    public function test_assemble_uses_reference_perms_object_without_docmdp_when_reference_is_non_scalar(): void
+    public function test_assemble_replaces_malformed_perms_value_with_docmdp_dictionary(): void
     {
         $document = $this->buildSinglePageDocument();
         $root = $document->getObject(1);
@@ -301,7 +351,9 @@ final class SignatureObjectAssemblerTest extends TestCase
         );
 
         self::assertNotNull($signature['Reference']);
-        self::assertNotNull($root['DocMDP']);
+        self::assertFalse(isset($root['DocMDP']));
+        self::assertInstanceOf(PDFValueObject::class, $root['Perms']);
+        self::assertSame($signature->getOid(), $root['Perms']['DocMDP']->asObjectReferenceOrNull());
     }
 
     public function test_assemble_throws_when_root_reference_is_invalid_list(): void
