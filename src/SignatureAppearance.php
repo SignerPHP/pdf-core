@@ -210,6 +210,9 @@ class SignatureAppearance
 
         $n2Stream = $this->xObject?->stream ?? '';
         $n2Resources = $this->xObject?->resources ?? [];
+        if ($this->xObject?->resourcesBuilder !== null) {
+            $n2Resources = ($this->xObject->resourcesBuilder)($pdfDocument, $n2Resources);
+        }
 
         // Embed user image (e.g. drawn signature) in the n2 layer at the specified rect.
         // This allows the background to live in n0 (full bbox) while the user image

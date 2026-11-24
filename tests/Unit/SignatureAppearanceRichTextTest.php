@@ -10,6 +10,7 @@ use SignerPHP\PdfCore\PageDescriptor;
 use SignerPHP\PdfCore\PageInfo;
 use SignerPHP\PdfCore\PdfDocument;
 use SignerPHP\PdfCore\PDFObject;
+use SignerPHP\PdfCore\PdfValue\PDFValueReference;
 use SignerPHP\PdfCore\PdfValue\PDFValueSimple;
 use SignerPHP\PdfCore\SignatureAppearance;
 
@@ -43,6 +44,57 @@ final class SignatureAppearanceRichTextTest extends TestCase
         self::assertSame($annotation, $result);
         self::assertNotNull($result['AP']);
         self::assertNotNull($result['AP']['N']);
+    }
+
+    public function test_prepares_indirect_font_resources_in_owning_document(): void
+    {
+        $document = $this->buildDocumentWithSinglePage();
+        $annotation = $document->createObject(['Type' => '/Annot']);
+        $calls = 0;
+        $buildResources = static function (PdfDocument $pdf, array $resources) use (&$calls): array {
+            $calls++;
+            self::assertSame(['ExtGState' => ['GS0' => ['Type' => '/ExtGState']]], $resources);
+
+            $fontFile = $pdf->createObject(['Length1' => 4]);
+            $fontFile->setStream('FONT', false);
+            $descriptor = $pdf->createObject([
+                'Type' => '/FontDescriptor',
+                'FontName' => '/TestFont',
+                'FontFile2' => new PDFValueReference($fontFile->getOid()),
+            ]);
+            $font = $pdf->createObject([
+                'Type' => '/Font',
+                'Subtype' => '/Type0',
+                'BaseFont' => '/TestFont',
+                'FontDescriptor' => new PDFValueReference($descriptor->getOid()),
+            ]);
+
+            $resources['Font'] = ['U1' => new PDFValueReference($font->getOid())];
+
+            return $resources;
+        };
+
+        $appearance = SignatureAppearance::new()
+            ->withXObject(new AppearanceXObject(
+                'BT /U1 12 Tf <0001> Tj ET',
+                ['ExtGState' => ['GS0' => ['Type' => '/ExtGState']]],
+                $buildResources,
+            ))
+            ->withRect([10, 20, 110, 70])
+            ->withPdfDocument($document)
+            ->withAnnotationObject($annotation)
+            ->withPageRotate(new PDFValueSimple(0));
+
+        $appearance->generate();
+        self::assertSame(1, $calls);
+
+        $entries = $this->collectPdfEntries($document);
+        self::assertStringContainsString('FONT', $entries);
+        self::assertStringContainsString('/FontFile2 ', $entries);
+        self::assertStringContainsString('/U1 ', $entries);
+        self::assertStringContainsString('/Subtype/Type0', $entries);
+        self::assertStringNotContainsString('/U1(', $entries);
+        self::assertStringContainsString('/GS0', $entries);
     }
 
     public function test_signature_appearance_works_with_image_when_no_prepared_xobject_is_provided(): void
