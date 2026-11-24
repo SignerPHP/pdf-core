@@ -26,10 +26,19 @@ final class DocumentTimestampObjectAssembler
     public function assemble(PdfDocument $pdfDocument): DocumentTimestampObject
     {
         $rootObject = $this->resolveRootObject($pdfDocument);
+        $pageObject = $pdfDocument->getPageInfo()->getPage(0);
+
+        // Validate both existing lists before adding objects or updating page annotations.
+        $annotations = null;
+        if ($pageObject !== null) {
+            $annotations = $this->resolveListValue($pdfDocument, $pageObject['Annots'] ?? new PDFValueList, 'annotation list');
+        }
+
+        $acroFormObject = $this->resolveOrCreateAcroForm($pdfDocument, $rootObject);
+        $fields = $this->resolveListValue($pdfDocument, $acroFormObject['Fields'] ?? new PDFValueList, 'AcroForm fields');
+
         $timestampObject = $pdfDocument->createObject([], DocumentTimestampObject::class, false);
         assert($timestampObject instanceof DocumentTimestampObject);
-
-        $pageObject = $pdfDocument->getPageInfo()->getPage(0);
 
         $field = [
             'FT' => '/Sig',
@@ -37,10 +46,7 @@ final class DocumentTimestampObjectAssembler
             'V' => new PDFValueReference($timestampObject->getOid()),
         ];
 
-        $annotations = null;
         if ($pageObject !== null) {
-            // Resolve /Annots before creating any object, so a broken reference leaves the document untouched.
-            $annotations = $this->resolveListValue($pdfDocument, $pageObject['Annots'] ?? new PDFValueList, 'annotation list');
             $field += [
                 'Type' => '/Annot',
                 'Subtype' => '/Widget',
@@ -57,12 +63,10 @@ final class DocumentTimestampObjectAssembler
             $pdfDocument->addObject($pageObject);
         }
 
-        $acroFormObject = $this->resolveOrCreateAcroForm($pdfDocument, $rootObject);
         $acroFormObject['SigFlags'] = 3;
-        $fields = $this->resolveListValue($pdfDocument, $acroFormObject['Fields'] ?? new PDFValueList, 'AcroForm fields');
         $fields->push(new PDFValueReference($fieldObject->getOid()));
         $acroFormObject['Fields'] = $fields;
-        $pdfDocument->addObject($acroFormObject);
+        $pdfDocument->addObject($acroFormObject instanceof PDFObject ? $acroFormObject : $rootObject);
 
         return $timestampObject;
     }
@@ -82,7 +86,7 @@ final class DocumentTimestampObjectAssembler
         return $rootObject;
     }
 
-    private function resolveOrCreateAcroForm(PdfDocument $pdfDocument, PDFObject $rootObject): PDFObject
+    private function resolveOrCreateAcroForm(PdfDocument $pdfDocument, PDFObject $rootObject): PDFObject|PDFValueObject
     {
         if (! isset($rootObject['AcroForm'])) {
             $acroFormObject = $pdfDocument->createObject(['Fields' => new PDFValueList]);
@@ -92,8 +96,13 @@ final class DocumentTimestampObjectAssembler
             return $acroFormObject;
         }
 
-        $reference = $rootObject['AcroForm']->asObjectReferenceOrNull();
-        if (($reference !== null) && (! is_array($reference))) {
+        $acroForm = $rootObject['AcroForm'];
+        if ($acroForm instanceof PDFValueObject) {
+            return $acroForm;
+        }
+
+        $reference = $acroForm->asObjectReferenceOrNull();
+        if (is_int($reference)) {
             $acroFormObject = $pdfDocument->getObject($reference);
             if ($acroFormObject === null) {
                 throw new PdfCoreStructureException('Could not resolve AcroForm object while attaching document timestamp.');
@@ -102,8 +111,7 @@ final class DocumentTimestampObjectAssembler
             return $acroFormObject;
         }
 
-        // Inline AcroForm dictionary: entries are written on the catalog object.
-        return $rootObject;
+        throw new PdfCoreStructureException('Invalid AcroForm dictionary while attaching document timestamp.');
     }
 
     private function resolveListValue(PdfDocument $pdfDocument, PDFValue $value, string $context): PDFValueList
