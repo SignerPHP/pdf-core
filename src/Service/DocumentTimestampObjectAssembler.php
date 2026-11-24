@@ -12,6 +12,7 @@ use SignerPHP\PdfCore\PdfValue\PDFValue;
 use SignerPHP\PdfCore\PdfValue\PDFValueList;
 use SignerPHP\PdfCore\PdfValue\PDFValueObject;
 use SignerPHP\PdfCore\PdfValue\PDFValueReference;
+use SignerPHP\PdfCore\PdfValue\PDFValueSimple;
 use SignerPHP\PdfCore\PdfValue\PDFValueString;
 use SignerPHP\PdfCore\Utils\Str;
 
@@ -79,7 +80,7 @@ final class DocumentTimestampObjectAssembler
         }
 
         $rootObject = $pdfDocument->getObject($root);
-        if ($rootObject === null) {
+        if ($rootObject === null || ! $rootObject->hasDictionaryValue()) {
             throw new PdfCoreStructureException('Invalid root object while attaching document timestamp.');
         }
 
@@ -88,7 +89,7 @@ final class DocumentTimestampObjectAssembler
 
     private function resolveOrCreateAcroForm(PdfDocument $pdfDocument, PDFObject $rootObject): PDFObject|PDFValueObject
     {
-        if (! isset($rootObject['AcroForm'])) {
+        if (! isset($rootObject['AcroForm']) || $this->isPdfNull($rootObject['AcroForm'])) {
             $acroFormObject = $pdfDocument->createObject(['Fields' => new PDFValueList]);
             $rootObject['AcroForm'] = new PDFValueReference($acroFormObject->getOid());
             $pdfDocument->addObject($rootObject);
@@ -108,7 +109,9 @@ final class DocumentTimestampObjectAssembler
                 throw new PdfCoreStructureException('Could not resolve AcroForm object while attaching document timestamp.');
             }
 
-            return $acroFormObject;
+            if ($acroFormObject->hasDictionaryValue()) {
+                return $acroFormObject;
+            }
         }
 
         throw new PdfCoreStructureException('Invalid AcroForm dictionary while attaching document timestamp.');
@@ -116,24 +119,43 @@ final class DocumentTimestampObjectAssembler
 
     private function resolveListValue(PdfDocument $pdfDocument, PDFValue $value, string $context): PDFValueList
     {
+        if ($this->isPdfNull($value)) {
+            return new PDFValueList;
+        }
+
         if ($value instanceof PDFValueList) {
-            return new PDFValueList($value->val());
-        }
+            $list = new PDFValueList($value->val());
+        } else {
+            $list = null;
+            $reference = $value->asObjectReferenceOrNull();
+            if (is_int($reference)) {
+                $listObject = $pdfDocument->getObject($reference);
+                if ($listObject === null) {
+                    throw new PdfCoreStructureException('Could not resolve '.$context.' object while attaching document timestamp.');
+                }
 
-        $reference = $value->asObjectReferenceOrNull();
-        if (($reference !== null) && (! is_array($reference))) {
-            $listObject = $pdfDocument->getObject($reference);
-            if ($listObject === null) {
-                throw new PdfCoreStructureException('Could not resolve '.$context.' object while attaching document timestamp.');
+                $list = $listObject->getListValue();
             }
-
-            return new PDFValueList(array_values($listObject->getValue()->val()));
         }
 
-        if ($value instanceof PDFValueObject) {
-            return new PDFValueList(array_values($value->val()));
+        if ($list === null) {
+            throw new PdfCoreStructureException('Invalid '.$context.' while attaching document timestamp.');
         }
 
-        return new PDFValueList;
+        // The parser can group successive indirect references into a single
+        // simple value. Validate the complete sequence, not a partial match.
+        foreach ($list->val() as $entry) {
+            if (! $entry instanceof PDFValueSimple
+                || preg_match('/\A[ \t\r\n\f\x00]*(?:[0-9]++[ \t\r\n\f\x00]++[0-9]++[ \t\r\n\f\x00]++R(?:[ \t\r\n\f\x00]++|\z))++\z/', (string) $entry) !== 1) {
+                throw new PdfCoreStructureException('Invalid '.$context.' while attaching document timestamp.');
+            }
+        }
+
+        return $list;
+    }
+
+    private function isPdfNull(PDFValue $value): bool
+    {
+        return $value instanceof PDFValueSimple && (string) $value === 'null';
     }
 }
