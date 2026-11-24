@@ -8,6 +8,7 @@ use ArrayAccess;
 use SignerPHP\PdfCore\Exception\PdfCoreParsingException;
 use SignerPHP\PdfCore\Exception\PdfCoreStructureException;
 use SignerPHP\PdfCore\PdfValue\PDFValue;
+use SignerPHP\PdfCore\PdfValue\PDFValueList;
 use SignerPHP\PdfCore\PdfValue\PDFValueObject;
 use SignerPHP\PdfCore\PdfValue\PDFValueSimple;
 use SignerPHP\PdfCore\Service\Ascii85Codec;
@@ -20,6 +21,10 @@ class PDFObject implements ArrayAccess, Stringable
     protected PDFValueObject $value;
 
     protected int $generation;
+
+    private bool $hasDictionaryValue;
+
+    private bool $hasListValue;
 
     public function __construct(protected int $oid, array|PDFValue|null $value = null, int $generation = 0)
     {
@@ -35,6 +40,11 @@ class PDFObject implements ArrayAccess, Stringable
 
             $value = $obj;
         }
+
+        // Keep the original kind: the legacy dictionary view also represents
+        // indirect arrays and scalars, including dictionaries with numeric keys.
+        $this->hasDictionaryValue = $value instanceof PDFValueObject;
+        $this->hasListValue = $value instanceof PDFValueList;
 
         if (! $value instanceof PDFValueObject) {
             $value = new PDFValueObject((array) $value->val());
@@ -93,6 +103,20 @@ endstream
     public function getValue(): PDFValueObject
     {
         return $this->value;
+    }
+
+    public function hasDictionaryValue(): bool
+    {
+        return $this->hasDictionaryValue;
+    }
+
+    /**
+     * Return an independent list view of an indirect array. getValue() retains
+     * its legacy dictionary representation for existing callers.
+     */
+    public function getListValue(): ?PDFValueList
+    {
+        return $this->hasListValue ? new PDFValueList(array_values($this->value->val())) : null;
     }
 
     public function hasField(string $field): bool
