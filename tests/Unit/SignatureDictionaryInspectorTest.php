@@ -45,6 +45,29 @@ PDF;
         self::assertSame(8, $details[0]['contents_hex_length']);
     }
 
+    public function test_extract_details_recognizes_only_exact_signature_type_names(): void
+    {
+        $pdf = <<<'PDF'
+1 0 obj
+<< /Type /Sig /SubFilter /adbe.pkcs7.detached /ByteRange [0 10 20 30] >>
+endobj
+2 0 obj
+<< /Type /DocTimeStamp /SubFilter /ETSI.RFC3161 /ByteRange [0 10 20 30] >>
+endobj
+3 0 obj
+<< /Type /DocTimeStamp-extra /ByteRange [0 10 20 30] >>
+endobj
+4 0 obj
+<< /Type /Sig-extra /ByteRange [0 10 20 30] >>
+endobj
+PDF;
+
+        self::assertSame(
+            ['adbe.pkcs7.detached', 'ETSI.RFC3161'],
+            array_column((new SignatureDictionaryInspector)->extractDetails($pdf), 'subfilter'),
+        );
+    }
+
     public function test_extract_details_skips_non_signature_dictionary(): void
     {
         $pdf = <<<'PDF'
